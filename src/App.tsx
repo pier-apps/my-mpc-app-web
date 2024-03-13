@@ -1,4 +1,4 @@
-import { KeyShare, SessionKind, PierMpcVaultSdk } from "@pier-wallet/mpc-lib";
+import { KeyShare, PierMpcVaultSdk, SessionKind } from "@pier-wallet/mpc-lib";
 import { createPierMpcSdkWasm } from "@pier-wallet/mpc-lib/wasm";
 import { useEffect, useState } from "react";
 
@@ -17,32 +17,21 @@ const ethereumProvider = new ethers.providers.JsonRpcProvider(
 
 const pierMpc = new PierMpcVaultSdk(createPierMpcSdkWasm());
 export default function Mpc() {
+  const [signedIn, setSignedIn] = useState(false);
   const [keyShare, setKeyShare] = useState<KeyShare | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-
-  const generateKeyShare = async () => {
-    setIsLoading(true);
-    try {
-      console.log("generating local key share...");
-      const localKeyShare = await pierMpc.generateKeyShare();
-
-      console.log("local key share generated.", localKeyShare.publicKey);
-      setKeyShare(localKeyShare);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   const [ethWallet, setEthWallet] = useState<PierMpcEthereumWallet | null>(
     null,
   );
+  const [btcWallet, setBtcWallet] = useState<PierMpcBitcoinWallet | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Establish connection with pier's MPC server
   useEffect(() => {
     if (!keyShare) return;
     (async () => {
       const signConnection = await pierMpc.establishConnection(
         SessionKind.SIGN,
+        keyShare.partiesParameters,
       );
       const ethWallet = new PierMpcEthereumWallet(
         keyShare,
@@ -50,9 +39,33 @@ export default function Mpc() {
         pierMpc,
         ethereumProvider,
       );
+      const btcWallet = new PierMpcBitcoinWallet(
+        keyShare,
+        PierMpcBitcoinWalletNetwork.Testnet,
+        signConnection,
+        pierMpc,
+      );
+
       setEthWallet(ethWallet);
+      setBtcWallet(btcWallet);
     })();
   }, [keyShare]);
+
+  const generateKeyShare = async () => {
+    setIsLoading(true);
+    try {
+      console.log("generating local key share (2 out of 2)...");
+      const localKeyShare = await pierMpc.generateKeyShare2Of2();
+
+      console.log("local key share generated.", localKeyShare.publicKey);
+      // TODO: Implement storing local key share somewhere (typically on the server of the application)
+      setKeyShare(localKeyShare);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const sendEthereumTransaction = async () => {
     if (!ethWallet) return;
@@ -77,22 +90,6 @@ export default function Mpc() {
     }
   };
 
-  const [btcWallet, setBtcWallet] = useState<PierMpcBitcoinWallet | null>(null);
-  useEffect(() => {
-    if (!keyShare) return;
-    (async () => {
-      const signConnection = await pierMpc.establishConnection(
-        SessionKind.SIGN,
-      );
-      const btcWallet = new PierMpcBitcoinWallet(
-        keyShare,
-        PierMpcBitcoinWalletNetwork.Testnet,
-        signConnection,
-        pierMpc,
-      );
-      setBtcWallet(btcWallet);
-    })();
-  }, [keyShare]);
   const sendBitcoinTransaction = async () => {
     if (!btcWallet) return;
 
@@ -120,7 +117,7 @@ export default function Mpc() {
   };
 
   return (
-    <div>
+    <div style={{ padding: "10rem" }}>
       <button
         disabled={isLoading}
         onClick={async () => {
@@ -130,6 +127,7 @@ export default function Mpc() {
               email: "mpc-lib-test@example.com",
               password: "123456",
             });
+            setSignedIn(true);
           } finally {
             setIsLoading(false);
           }
@@ -137,7 +135,7 @@ export default function Mpc() {
           console.log("signed in as test user");
         }}
       >
-        Sign in as Test User
+        {signedIn ? "Signed in" : "Sign in as Test User"}
       </button>
       <button onClick={generateKeyShare} disabled={isLoading}>
         Generate Key Share
@@ -148,7 +146,7 @@ export default function Mpc() {
       <button onClick={sendBitcoinTransaction} disabled={isLoading}>
         Send Bitcoin
       </button>
-      <div>PublicKey: {keyShare?.publicKey.join(",")}</div>
+      <div>PublicKey: {keyShare?.publicKey}</div>
       <div>ETH Address: {ethWallet?.address}</div>
       <div>BTC Address: {btcWallet?.address}</div>
     </div>
